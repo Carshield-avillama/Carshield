@@ -149,9 +149,3 @@ elif choice == "Panel de Revisión (Admin)":
     # Función para descargar la base de datos
     csv = st.session_state.db.to_csv(index=False).encode('utf-8')
     st.download_button("Descargar Base de Datos a Excel/CSV", data=csv, file_name='Carshield_DB.csv', mime='text/csv')
-"""
-
-with open("/mnt/data/app_carshield_v2.py", "w", encoding="utf-8") as f:
-    f.write(updated_app_code)
-
-print("Updated Streamlit app script saved.")

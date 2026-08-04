@@ -1,9 +1,4 @@
-# We'll generate an updated Streamlit app script that includes editing capabilities.
-# Since direct integration with Google Sheets requires setting up service accounts and secrets (which the user must do manually),
-# we will provide the code structure that allows editing within the Streamlit app itself using standard pandas dataframes,
-# while strongly recommending and outlining the Google Sheets integration.
-
-updated_app_code = """import streamlit as st
+import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os

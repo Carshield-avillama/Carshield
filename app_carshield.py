@@ -1,173 +1,157 @@
-import streamlit as st
+# We'll generate an updated Streamlit app script that includes editing capabilities.
+# Since direct integration with Google Sheets requires setting up service accounts and secrets (which the user must do manually),
+# we will provide the code structure that allows editing within the Streamlit app itself using standard pandas dataframes,
+# while strongly recommending and outlining the Google Sheets integration.
+
+updated_app_code = """import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
 
-# Set page config
-st.set_page_config(page_title="Carshield - Control de Preparación", page_icon="🛡️", layout="centered")
+# Configuración de la página
+st.set_page_config(page_title="Carshield - Control Operativo", page_icon="🛡️", layout="wide")
 
-# Custom CSS for branding
-st.markdown("""
+# CSS personalizado para Carshield
+st.markdown(\"""
     <style>
-    .main {
-        background-color: #f4f4f4;
-    }
-    h1 {
-        color: #FFD700;
-        text-align: center;
-        background-color: #000000;
-        padding: 10px;
-        border-radius: 5px;
-    }
-    h2, h3 {
-        color: #000000;
-    }
-    .stButton>button {
-        background-color: #FFD700;
-        color: #000000;
-        font-weight: bold;
-        border: none;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        background-color: #e6c200;
-        color: #000000;
-    }
+    .main { background-color: #f4f4f4; }
+    h1 { color: #FFD700; text-align: center; background-color: #000000; padding: 10px; border-radius: 5px; }
+    .stButton>button { background-color: #FFD700; color: #000000; font-weight: bold; border: none; width: 100%; }
+    .stButton>button:hover { background-color: #e6c200; color: #000000; }
     </style>
-""", unsafe_allow_html=True)
+\""", unsafe_allow_html=True)
 
-# App Title
 st.title("CARSHIELD COATINGS")
-st.markdown("<h3 style='text-align: center;'>Control de Preparación</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)
 st.write("---")
 
-# Data Storage Setup (using a local CSV for this demo)
-DATA_FILE = "carshield_records.csv"
+DATA_FILE = "carshield_db.csv"
 
+# Funciones de carga y guardado
 def load_data():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE)
     else:
-        columns = ["Fecha_Registro", "Placa", "Marca", "Modelo", "Año", "Color", 
-                   "Pulido_Pintura_Si", "Pulido_Pintura_No", "Pulido_Pintura_Hecho",
-                   "Pulido_Vidrios_Si", "Pulido_Vidrios_No", "Pulido_Vidrios_Hecho",
-                   "Limpieza_Tapiceria_Si", "Limpieza_Tapiceria_No", "Limpieza_Tapiceria_Hecho",
-                   "Limpieza_Motor_Si", "Limpieza_Motor_No", "Limpieza_Motor_Hecho",
-                   "Polarizado_Si", "Polarizado_No", "Polarizado_Hecho",
-                   "Quitar_Racks_Si", "Quitar_Racks_No", "Quitar_Racks_Hecho",
-                   "Adelantado_Si", "Adelantado_No", "Adelantado_Hecho",
-                   "Fecha_Pintura", "Detalles", "Observaciones"]
+        columns = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", 
+                   "Pulido_Pintura", "Pulido_Vidrios", "Limpieza_Tapiceria",
+                   "Limpieza_Motor", "Polarizado", "Quitar_Racks", "Adelantado",
+                   "Estado_General", "Fecha_Pintura", "Observaciones"]
         return pd.DataFrame(columns=columns)
 
 def save_data(df):
     df.to_csv(DATA_FILE, index=False)
 
-df_records = load_data()
+# Cargar base de datos
+if 'db' not in st.session_state:
+    st.session_state.db = load_data()
 
-# Navigation
-menu = ["Nuevo Registro", "Ver Registros Actuales"]
-choice = st.sidebar.selectbox("Navegación", menu)
+# Navegación
+menu = ["Ingresar Vehículo Nuevo", "Actualizar Estatus (Empleados)", "Panel de Revisión (Admin)"]
+choice = st.sidebar.radio("Navegación", menu)
 
-if choice == "Nuevo Registro":
-    st.header("Información del Vehículo")
+opciones_estado = ["Pendiente", "En Proceso", "Completado"]
+
+if choice == "Ingresar Vehículo Nuevo":
+    st.header("1. Registrar Nuevo Ingreso")
     
     col1, col2 = st.columns(2)
     with col1:
-        placa = st.text_input("Placa")
-        modelo = st.text_input("Modelo")
-    with col2:
+        placa = st.text_input("Placa *").upper()
         marca = st.text_input("Marca")
-        anio = st.text_input("Año")
-    
-    color = st.text_input("Color")
-    
-    st.write("---")
-    st.header("Lista de Tareas")
-    
-    tasks = [
-        "Pulido de pintura", "Pulido de vidrios", "Limpieza de tapicería",
-        "Limpieza de motor", "Polarizado", "Quitar racks", "Adelantado"
-    ]
-    
-    task_results = {}
-    
-    # Create columns for the checklist headers
-    hcol1, hcol2, hcol3, hcol4 = st.columns([2, 1, 1, 2])
-    with hcol1: st.write("**Tarea**")
-    with hcol2: st.write("**Sí**")
-    with hcol3: st.write("**No**")
-    with hcol4: st.write("**Estado**")
-    
-    for task in tasks:
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 2])
-        with c1:
-            st.write(task)
-        with c2:
-            si = st.checkbox("", key=f"si_{task}")
-        with c3:
-            no = st.checkbox("", key=f"no_{task}")
-        with c4:
-            estado = st.selectbox("", ["Pendiente", "En Proceso", "Completado"], key=f"est_{task}")
-            
-        task_results[task] = {"Si": si, "No": no, "Estado": estado}
-
-    st.write("---")
-    st.header("Detalles Finales")
-    
-    fecha_pintura = st.date_input("Fecha de entrega a pintura")
-    detalles = st.text_area("Detalles (Pintura y otros)", help="Escribe los detalles específicos requeridos")
-    observaciones = st.text_area("Observaciones Generales")
-    
-    if st.button("Guardar Registro"):
-        if not placa:
-            st.error("La Placa es obligatoria para guardar el registro.")
-        else:
-            new_data = {
-                "Fecha_Registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Placa": placa,
-                "Marca": marca,
-                "Modelo": modelo,
-                "Año": anio,
-                "Color": color,
-                "Pulido_Pintura_Si": task_results["Pulido de pintura"]["Si"],
-                "Pulido_Pintura_No": task_results["Pulido de pintura"]["No"],
-                "Pulido_Pintura_Hecho": task_results["Pulido de pintura"]["Estado"],
-                "Pulido_Vidrios_Si": task_results["Pulido de vidrios"]["Si"],
-                "Pulido_Vidrios_No": task_results["Pulido de vidrios"]["No"],
-                "Pulido_Vidrios_Hecho": task_results["Pulido de vidrios"]["Estado"],
-                "Limpieza_Tapiceria_Si": task_results["Limpieza de tapicería"]["Si"],
-                "Limpieza_Tapiceria_No": task_results["Limpieza de tapicería"]["No"],
-                "Limpieza_Tapiceria_Hecho": task_results["Limpieza de tapicería"]["Estado"],
-                "Limpieza_Motor_Si": task_results["Limpieza de motor"]["Si"],
-                "Limpieza_Motor_No": task_results["Limpieza de motor"]["No"],
-                "Limpieza_Motor_Hecho": task_results["Limpieza de motor"]["Estado"],
-                "Polarizado_Si": task_results["Polarizado"]["Si"],
-                "Polarizado_No": task_results["Polarizado"]["No"],
-                "Polarizado_Hecho": task_results["Polarizado"]["Estado"],
-                "Quitar_Racks_Si": task_results["Quitar racks"]["Si"],
-                "Quitar_Racks_No": task_results["Quitar racks"]["No"],
-                "Quitar_Racks_Hecho": task_results["Quitar racks"]["Estado"],
-                "Adelantado_Si": task_results["Adelantado"]["Si"],
-                "Adelantado_No": task_results["Adelantado"]["No"],
-                "Adelantado_Hecho": task_results["Adelantado"]["Estado"],
-                "Fecha_Pintura": fecha_pintura,
-                "Detalles": detalles,
-                "Observaciones": observaciones
-            }
-            
-            df_records = pd.concat([df_records, pd.DataFrame([new_data])], ignore_index=True)
-            save_data(df_records)
-            st.success(f"Registro para el vehículo {placa} guardado exitosamente.")
-
-elif choice == "Ver Registros Actuales":
-    st.header("Base de Datos de Vehículos")
-    if df_records.empty:
-        st.info("No hay registros almacenados actualmente.")
-    else:
-        st.dataframe(df_records)
+    with col2:
+        modelo = st.text_input("Modelo")
+        color = st.text_input("Color")
         
-        st.write("### Buscar Registro por Placa")
-        search_placa = st.text_input("Ingrese la placa del vehículo")
-        if search_placa:
-            filtered_df = df_records[df_records["Placa"].str.contains(search_placa, case=False, na=False)]
-            st.dataframe(filtered_df)
+    observaciones = st.text_area("Notas iniciales")
+    
+    if st.button("Registrar Vehículo"):
+        if placa:
+            nuevo_id = str(len(st.session_state.db) + 1).zfill(4)
+            nueva_fila = {
+                "ID": nuevo_id,
+                "Fecha_Ingreso": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Placa": placa, "Marca": marca, "Modelo": modelo, "Color": color,
+                "Pulido_Pintura": "Pendiente", "Pulido_Vidrios": "Pendiente", 
+                "Limpieza_Tapiceria": "Pendiente", "Limpieza_Motor": "Pendiente", 
+                "Polarizado": "Pendiente", "Quitar_Racks": "Pendiente", 
+                "Adelantado": "Pendiente", "Estado_General": "En Taller",
+                "Fecha_Pintura": "", "Observaciones": observaciones
+            }
+            st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([nueva_fila])], ignore_index=True)
+            save_data(st.session_state.db)
+            st.success(f"✅ Vehículo {placa} registrado correctamente.")
+        else:
+            st.error("⚠️ La placa es obligatoria.")
+
+elif choice == "Actualizar Estatus (Empleados)":
+    st.header("2. Actualizar Tareas del Vehículo")
+    
+    placa_buscar = st.text_input("Buscar placa para actualizar:").upper()
+    
+    if placa_buscar:
+        if placa_buscar in st.session_state.db['Placa'].values:
+            # Obtener el índice del vehículo
+            idx = st.session_state.db[st.session_state.db['Placa'] == placa_buscar].index[0]
+            vehiculo = st.session_state.db.loc[idx]
+            
+            st.write(f"**Vehículo:** {vehiculo['Marca']} {vehiculo['Modelo']} | **Color:** {vehiculo['Color']}")
+            st.write("---")
+            
+            # Formulario de actualización
+            with st.form("actualizacion_form"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    pp = st.selectbox("Pulido Pintura", opciones_estado, index=opciones_estado.index(vehiculo["Pulido_Pintura"]))
+                    pv = st.selectbox("Pulido Vidrios", opciones_estado, index=opciones_estado.index(vehiculo["Pulido_Vidrios"]))
+                    lt = st.selectbox("Limpieza Tapicería", opciones_estado, index=opciones_estado.index(vehiculo["Limpieza_Tapiceria"]))
+                with col2:
+                    lm = st.selectbox("Limpieza Motor", opciones_estado, index=opciones_estado.index(vehiculo["Limpieza_Motor"]))
+                    pol = st.selectbox("Polarizado", opciones_estado, index=opciones_estado.index(vehiculo["Polarizado"]))
+                    qr = st.selectbox("Quitar Racks", opciones_estado, index=opciones_estado.index(vehiculo["Quitar_Racks"]))
+                with col3:
+                    ade = st.selectbox("Adelantado", opciones_estado, index=opciones_estado.index(vehiculo["Adelantado"]))
+                    estado_gen = st.selectbox("Estado General del Auto", ["En Taller", "Listo para Entrega", "Entregado"], index=["En Taller", "Listo para Entrega", "Entregado"].index(vehiculo.get("Estado_General", "En Taller")))
+                    
+                nuevas_obs = st.text_area("Añadir observaciones (opcional)", value=vehiculo["Observaciones"])
+                
+                guardar_cambios = st.form_submit_button("Guardar Cambios de Estatus")
+                
+                if guardar_cambios:
+                    # Actualizar dataframe
+                    st.session_state.db.at[idx, "Pulido_Pintura"] = pp
+                    st.session_state.db.at[idx, "Pulido_Vidrios"] = pv
+                    st.session_state.db.at[idx, "Limpieza_Tapiceria"] = lt
+                    st.session_state.db.at[idx, "Limpieza_Motor"] = lm
+                    st.session_state.db.at[idx, "Polarizado"] = pol
+                    st.session_state.db.at[idx, "Quitar_Racks"] = qr
+                    st.session_state.db.at[idx, "Adelantado"] = ade
+                    st.session_state.db.at[idx, "Estado_General"] = estado_gen
+                    st.session_state.db.at[idx, "Observaciones"] = nuevas_obs
+                    
+                    save_data(st.session_state.db)
+                    st.success("✅ Estatus actualizado correctamente.")
+        else:
+            st.warning("No se encontró ningún vehículo con esa placa activa.")
+
+elif choice == "Panel de Revisión (Admin)":
+    st.header("3. Visión General de Operaciones")
+    
+    # Filtros rápidos
+    estatus_filtro = st.radio("Filtrar por Estado General:", ["Todos", "En Taller", "Listo para Entrega", "Entregado"], horizontal=True)
+    
+    df_mostrar = st.session_state.db
+    if estatus_filtro != "Todos":
+        df_mostrar = df_mostrar[df_mostrar["Estado_General"] == estatus_filtro]
+        
+    st.dataframe(df_mostrar, use_container_width=True)
+    
+    # Función para descargar la base de datos
+    csv = st.session_state.db.to_csv(index=False).encode('utf-8')
+    st.download_button("Descargar Base de Datos a Excel/CSV", data=csv, file_name='Carshield_DB.csv', mime='text/csv')
+"""
+
+with open("/mnt/data/app_carshield_v2.py", "w", encoding="utf-8") as f:
+    f.write(updated_app_code)
+
+print("Updated Streamlit app script saved.")

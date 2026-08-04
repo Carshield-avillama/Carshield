@@ -7,14 +7,14 @@ import os
 st.set_page_config(page_title="Carshield - Control Operativo", page_icon="🛡️", layout="wide")
 
 # CSS personalizado para Carshield
-st.markdown(\"""
+st.markdown("""
     <style>
     .main { background-color: #f4f4f4; }
     h1 { color: #FFD700; text-align: center; background-color: #000000; padding: 10px; border-radius: 5px; }
     .stButton>button { background-color: #FFD700; color: #000000; font-weight: bold; border: none; width: 100%; }
     .stButton>button:hover { background-color: #e6c200; color: #000000; }
     </style>
-\""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 st.title("CARSHIELD COATINGS")
 st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)

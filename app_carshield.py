@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 
-# Configuración de la página
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Carshield - Control Operativo", page_icon="🛡️", layout="wide")
 
-# CSS personalizado para Carshield
+# --- 2. ESTILOS CSS ---
 st.markdown("""
     <style>
     .main { background-color: #f4f4f4; }
@@ -20,32 +21,42 @@ st.title("CARSHIELD COATINGS")
 st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)
 st.write("---")
 
-DATA_FILE = "carshield_db.csv"
+# --- 3. CONEXIÓN A GOOGLE SHEETS ---
+@st.cache_resource
+def get_gspread_client():
+    scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    # Llama a los secretos que configuraste en Streamlit
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    return gspread.authorize(creds)
 
-# Funciones de carga y guardado
+try:
+    client = get_gspread_client()
+    # IMPORTANTE: Busca el archivo exactamente con este nombre
+    hoja_datos = client.open("Carshield_BaseDatos_App").sheet1 
+except Exception as e:
+    st.error(f"Error de conexión. Verifica el nombre de la hoja o los permisos: {e}")
+    st.stop()
+
+# --- 4. FUNCIONES DE DATOS ---
 def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    else:
-        columns = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", 
+    records = hoja_datos.get_all_records()
+    if not records:
+        columnas = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", 
                    "Pulido_Pintura", "Pulido_Vidrios", "Limpieza_Tapiceria",
                    "Limpieza_Motor", "Polarizado", "Quitar_Racks", "Adelantado",
                    "Estado_General", "Fecha_Pintura", "Observaciones"]
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame(columns=columnas)
+    return pd.DataFrame(records)
 
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+df_db = load_data()
 
-# Cargar base de datos
-if 'db' not in st.session_state:
-    st.session_state.db = load_data()
-
-# Navegación
+# --- 5. INTERFAZ DE NAVEGACIÓN ---
 menu = ["Ingresar Vehículo Nuevo", "Actualizar Estatus (Empleados)", "Panel de Revisión (Admin)"]
 choice = st.sidebar.radio("Navegación", menu)
-
 opciones_estado = ["Pendiente", "En Proceso", "Completado"]
 
+# SECCIÓN 1: INGRESO
 if choice == "Ingresar Vehículo Nuevo":
     st.header("1. Registrar Nuevo Ingreso")
     
@@ -61,38 +72,39 @@ if choice == "Ingresar Vehículo Nuevo":
     
     if st.button("Registrar Vehículo"):
         if placa:
-            nuevo_id = str(len(st.session_state.db) + 1).zfill(4)
-            nueva_fila = {
-                "ID": nuevo_id,
-                "Fecha_Ingreso": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "Placa": placa, "Marca": marca, "Modelo": modelo, "Color": color,
-                "Pulido_Pintura": "Pendiente", "Pulido_Vidrios": "Pendiente", 
-                "Limpieza_Tapiceria": "Pendiente", "Limpieza_Motor": "Pendiente", 
-                "Polarizado": "Pendiente", "Quitar_Racks": "Pendiente", 
-                "Adelantado": "Pendiente", "Estado_General": "En Taller",
-                "Fecha_Pintura": "", "Observaciones": observaciones
-            }
-            st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([nueva_fila])], ignore_index=True)
-            save_data(st.session_state.db)
-            st.success(f"✅ Vehículo {placa} registrado correctamente.")
+            nuevo_id = str(len(df_db) + 1).zfill(4)
+            fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            nueva_fila = [
+                nuevo_id, fecha_actual, placa, marca, modelo, color,
+                "Pendiente", "Pendiente", "Pendiente", "Pendiente",
+                "Pendiente", "Pendiente", "Pendiente", "En Taller",
+                "", observaciones
+            ]
+            
+            # Guardar directo en Google Sheets
+            hoja_datos.append_row(nueva_fila)
+            st.success(f"✅ Vehículo {placa} registrado correctamente en la nube.")
         else:
             st.error("⚠️ La placa es obligatoria.")
 
+# SECCIÓN 2: ACTUALIZACIÓN (EMPLEADOS)
 elif choice == "Actualizar Estatus (Empleados)":
     st.header("2. Actualizar Tareas del Vehículo")
     
     placa_buscar = st.text_input("Buscar placa para actualizar:").upper()
     
     if placa_buscar:
-        if placa_buscar in st.session_state.db['Placa'].values:
-            # Obtener el índice del vehículo
-            idx = st.session_state.db[st.session_state.db['Placa'] == placa_buscar].index[0]
-            vehiculo = st.session_state.db.loc[idx]
+        filtro = df_db[df_db['Placa'] == placa_buscar]
+        
+        if not filtro.empty:
+            idx = filtro.index[0] 
+            fila_sheet = int(idx) + 2 # Cálculo de la fila en Google Sheets
+            vehiculo = df_db.loc[idx]
             
             st.write(f"**Vehículo:** {vehiculo['Marca']} {vehiculo['Modelo']} | **Color:** {vehiculo['Color']}")
             st.write("---")
             
-            # Formulario de actualización
             with st.form("actualizacion_form"):
                 col1, col2, col3 = st.columns(3)
                 
@@ -106,41 +118,32 @@ elif choice == "Actualizar Estatus (Empleados)":
                     qr = st.selectbox("Quitar Racks", opciones_estado, index=opciones_estado.index(vehiculo["Quitar_Racks"]))
                 with col3:
                     ade = st.selectbox("Adelantado", opciones_estado, index=opciones_estado.index(vehiculo["Adelantado"]))
-                    estado_gen = st.selectbox("Estado General del Auto", ["En Taller", "Listo para Entrega", "Entregado"], index=["En Taller", "Listo para Entrega", "Entregado"].index(vehiculo.get("Estado_General", "En Taller")))
+                    estado_gen = st.selectbox("Estado General", ["En Taller", "Listo para Entrega", "Entregado"], index=["En Taller", "Listo para Entrega", "Entregado"].index(vehiculo.get("Estado_General", "En Taller")))
+                    fecha_pintura = st.text_input("Fecha a Pintura (opcional)", value=str(vehiculo["Fecha_Pintura"]))
                     
-                nuevas_obs = st.text_area("Añadir observaciones (opcional)", value=vehiculo["Observaciones"])
-                
-                guardar_cambios = st.form_submit_button("Guardar Cambios de Estatus")
+                nuevas_obs = st.text_area("Añadir observaciones (opcional)", value=str(vehiculo["Observaciones"]))
+                guardar_cambios = st.form_submit_button("Guardar Cambios en la Nube")
                 
                 if guardar_cambios:
-                    # Actualizar dataframe
-                    st.session_state.db.at[idx, "Pulido_Pintura"] = pp
-                    st.session_state.db.at[idx, "Pulido_Vidrios"] = pv
-                    st.session_state.db.at[idx, "Limpieza_Tapiceria"] = lt
-                    st.session_state.db.at[idx, "Limpieza_Motor"] = lm
-                    st.session_state.db.at[idx, "Polarizado"] = pol
-                    st.session_state.db.at[idx, "Quitar_Racks"] = qr
-                    st.session_state.db.at[idx, "Adelantado"] = ade
-                    st.session_state.db.at[idx, "Estado_General"] = estado_gen
-                    st.session_state.db.at[idx, "Observaciones"] = nuevas_obs
+                    # Actualizar celdas en bloque (De la columna G a la P)
+                    valores_actualizados = [[pp, pv, lt, lm, pol, qr, ade, estado_gen, fecha_pintura, nuevas_obs]]
+                    hoja_datos.update(range_name=f"G{fila_sheet}:P{fila_sheet}", values=valores_actualizados)
                     
-                    save_data(st.session_state.db)
-                    st.success("✅ Estatus actualizado correctamente.")
+                    st.success("✅ Estatus actualizado correctamente en Google Sheets.")
         else:
             st.warning("No se encontró ningún vehículo con esa placa activa.")
 
+# SECCIÓN 3: REVISIÓN (ADMIN)
 elif choice == "Panel de Revisión (Admin)":
     st.header("3. Visión General de Operaciones")
     
-    # Filtros rápidos
-    estatus_filtro = st.radio("Filtrar por Estado General:", ["Todos", "En Taller", "Listo para Entrega", "Entregado"], horizontal=True)
-    
-    df_mostrar = st.session_state.db
-    if estatus_filtro != "Todos":
-        df_mostrar = df_mostrar[df_mostrar["Estado_General"] == estatus_filtro]
+    if df_db.empty:
+        st.info("La base de datos está vacía. Registra tu primer vehículo.")
+    else:
+        estatus_filtro = st.radio("Filtrar por Estado General:", ["Todos", "En Taller", "Listo para Entrega", "Entregado"], horizontal=True)
         
-    st.dataframe(df_mostrar, use_container_width=True)
-    
-    # Función para descargar la base de datos
-    csv = st.session_state.db.to_csv(index=False).encode('utf-8')
-    st.download_button("Descargar Base de Datos a Excel/CSV", data=csv, file_name='Carshield_DB.csv', mime='text/csv')
+        df_mostrar = df_db.copy()
+        if estatus_filtro != "Todos":
+            df_mostrar = df_mostrar[df_mostrar["Estado_General"] == estatus_filtro]
+            
+        st.dataframe(df_mostrar, use_container_width=True)

@@ -20,7 +20,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("CARSHIELD COATINGS")
+st.title("V clean Lavacar corporativo")
 st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)
 st.write("---")
 

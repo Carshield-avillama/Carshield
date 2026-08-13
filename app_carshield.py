@@ -16,6 +16,7 @@ st.markdown("""
     .stButton>button:hover { background-color: #e6c200; color: #000000; }
     .pintura-header { background-color: #333333; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px;}
     .admin-header { background-color: #7f1d1d; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px;}
+    .fecha-destacada { background-color: #fef3c7; padding: 10px; border-left: 5px solid #d97706; margin-bottom: 15px; border-radius: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -47,10 +48,10 @@ except Exception as e:
 def load_data_detallado():
     records = hoja_datos.get_all_records()
     if not records:
-        columnas = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", "Agencia",
+        columnas = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", "Agencia", "Fecha_Estimada_Entrega",
                    "Pulido_Pintura", "Pulido_Vidrios", "Limpieza_Tapiceria",
                    "Limpieza_Motor", "Polarizado", "Quitar_Racks", "Adelantado",
-                   "Estado_General", "Fecha_Pintura", "Observaciones"]
+                   "Estado_General", "Fecha_Pintura", "Etapa_Pintura", "Observaciones"]
         return pd.DataFrame(columns=columnas)
     return pd.DataFrame(records)
 
@@ -81,6 +82,7 @@ choice = st.sidebar.radio("Ir a:", menu)
 
 opciones_estado_detallado = ["Pendiente", "En Proceso", "Completado"]
 opciones_estado_pintura = ["Ingreso a Cabina", "Preparación/Lijado", "Fondeado/Imprimación", "Aplicación de Color", "Aplicación de Transparente", "Horneado/Secado", "Pulido Final", "Terminado"]
+opciones_etapa_pintura_general = ["No iniciado", "Alistado", "en cabina de pintura", "entregado"]
 
 # ==========================================
 # SECCIÓN 0: CONSULTA CLIENTE/AGENCIA
@@ -93,17 +95,17 @@ if choice == "Consultar Estado (Cliente/Agencia)":
     
     if st.button("Buscar Vehículos"):
         if busqueda_cliente:
-            # Buscar coincidencias tanto en la columna de Placa como en la de Agencia
             mask = (df_db['Placa'].astype(str).str.upper().str.strip() == busqueda_cliente) | (df_db['Agencia'].astype(str).str.upper().str.strip().str.contains(busqueda_cliente))
             filtro = df_db[mask]
             
             if not filtro.empty:
                 st.success(f"✅ Se encontraron {len(filtro)} vehículo(s).")
                 
-                # Desplegar cada vehículo en un menú expandible
                 for idx, vehiculo in filtro.iterrows():
                     estado_gen = vehiculo.get('Estado_General', 'En Taller')
                     agencia_texto = vehiculo.get('Agencia', 'Particular')
+                    fecha_entrega_str = vehiculo.get('Fecha_Estimada_Entrega', 'Por definir')
+                    if not fecha_entrega_str: fecha_entrega_str = 'Por definir'
                     
                     if estado_gen == "Entregado":
                         color = "green"
@@ -115,25 +117,28 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                     titulo_expander = f"🚘 Placa: {vehiculo.get('Placa', '')} | {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} | Agencia: {agencia_texto} | Estatus: {estado_gen}"
                     
                     with st.expander(titulo_expander):
+                        # CELDA DE ALTA PRIORIDAD PARA LA FECHA
+                        st.markdown(f"<div class='fecha-destacada'><h4>🗓️ Fecha Estimada de Entrega: <span style='color:#d97706'>{fecha_entrega_str}</span></h4></div>", unsafe_allow_html=True)
+                        
                         st.markdown(f"### Estado General: <span style='color:{color}'>{estado_gen}</span>", unsafe_allow_html=True)
                         st.write("---")
-                        st.write("#### ✨ Procesos de Detallado:")
+                        st.write("#### ✨ Procesos del Vehículo:")
                         
                         detalles = {
+                            "Etapa de Pintura": vehiculo.get("Etapa_Pintura", "No iniciado"),
                             "Pulido de Pintura": vehiculo.get("Pulido_Pintura", "Pendiente"),
                             "Pulido de Vidrios": vehiculo.get("Pulido_Vidrios", "Pendiente"),
                             "Limpieza de Tapicería": vehiculo.get("Limpieza_Tapiceria", "Pendiente"),
                             "Limpieza de Motor": vehiculo.get("Limpieza_Motor", "Pendiente"),
-                            "Polarizado": vehiculo.get("Polarizado", "Pendiente")
+                            "Polarizado": vehiculo.get("Polarizado", "Pendiente", "No aplica")
                         }
                         df_detalles = pd.DataFrame(list(detalles.items()), columns=["Proceso", "Estatus"])
                         st.dataframe(df_detalles, use_container_width=True, hide_index=True)
                         
-                        # Buscar si el auto tiene piezas en pintura
                         placa_actual = vehiculo.get('Placa', '')
                         filtro_pintura = df_pintura[df_pintura['Placa_Asociada'].astype(str).str.upper().str.strip() == placa_actual]
                         if not filtro_pintura.empty:
-                            st.write("#### 🎨 Estado en Cabina de Pintura:")
+                            st.write("#### 🎨 Estado Detallado en Cabina:")
                             df_pintura_mostrar = filtro_pintura[["Nombre_Pieza", "Estado_Pintura", "Fecha_Estimada_Fin"]].copy()
                             df_pintura_mostrar.columns = ["Pieza", "Etapa Actual", "Fecha Estimada"]
                             st.dataframe(df_pintura_mostrar, use_container_width=True, hide_index=True)
@@ -156,6 +161,7 @@ elif choice == "Ingresar Vehículo Nuevo":
     with col2:
         modelo = st.text_input("Modelo")
         color = st.text_input("Color")
+        fecha_entrega = st.date_input("Fecha estimada de entrega 🗓️ *")
         
     observaciones = st.text_area("Notas iniciales")
     
@@ -165,10 +171,10 @@ elif choice == "Ingresar Vehículo Nuevo":
             fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
             
             nueva_fila = [
-                nuevo_id, fecha_actual, placa, marca, modelo, color, agencia,
+                nuevo_id, fecha_actual, placa, marca, modelo, color, agencia, str(fecha_entrega),
                 "Pendiente", "Pendiente", "Pendiente", "Pendiente",
                 "Pendiente", "Pendiente", "Pendiente", "En Taller",
-                "", observaciones
+                "", "No iniciado", observaciones
             ]
             
             hoja_datos.append_row(nueva_fila)
@@ -209,15 +215,27 @@ elif choice == "Actualizar Estatus (Detallado)":
                 with col3:
                     ade = st.selectbox("Adelantado", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Adelantado"]))
                     estado_gen = st.selectbox("Estado General", ["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"], index=["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"].index(vehiculo["Estado_General"]))
-                    fecha_pintura = st.text_input("Fecha a Pintura (opcional)", value=str(vehiculo["Fecha_Pintura"]))
                     
-                nuevas_obs = st.text_area("Añadir observaciones (opcional)", value=str(vehiculo["Observaciones"]))
+                    estatus_pintura_actual = vehiculo.get("Etapa_Pintura", "No iniciado")
+                    idx_pintura = opciones_etapa_pintura_general.index(estatus_pintura_actual) if estatus_pintura_actual in opciones_etapa_pintura_general else 0
+                    etapa_pintura = st.selectbox("Etapa de Pintura", opciones_etapa_pintura_general, index=idx_pintura)
+                    
+                st.write("---")
+                col_extra1, col_extra2, col_extra3 = st.columns(3)
+                with col_extra1:
+                    # Lo dejo como texto para evitar errores si está vacío en la base de datos
+                    fecha_estimada = st.text_input("Fecha Estimada de Entrega 🗓️", value=str(vehiculo.get("Fecha_Estimada_Entrega", "")))
+                with col_extra2:
+                    fecha_pintura = st.text_input("Fecha a Pintura (opcional)", value=str(vehiculo.get("Fecha_Pintura", "")))
+                with col_extra3:
+                    nuevas_obs = st.text_area("Añadir observaciones", value=str(vehiculo["Observaciones"]))
+                    
                 guardar_cambios = st.form_submit_button("Guardar Cambios")
                 
                 if guardar_cambios:
-                    # NOTA TÉCNICA: Al añadir la columna "Agencia" (G), las columnas de estatus ahora van de la H a la Q
-                    valores_actualizados = [[pp, pv, lt, lm, pol, qr, ade, estado_gen, fecha_pintura, nuevas_obs]]
-                    hoja_datos.update(range_name=f"H{fila_sheet}:Q{fila_sheet}", values=valores_actualizados)
+                    # Las columnas a actualizar ahora van de la H a la S (12 columnas en total)
+                    valores_actualizados = [[fecha_estimada, pp, pv, lt, lm, pol, qr, ade, estado_gen, fecha_pintura, etapa_pintura, nuevas_obs]]
+                    hoja_datos.update(range_name=f"H{fila_sheet}:S{fila_sheet}", values=valores_actualizados)
                     st.success("✅ Estatus actualizado correctamente.")
         else:
             st.warning("No se encontró ningún vehículo con esa placa activa.")

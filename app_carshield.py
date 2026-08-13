@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Carshield - Control Operativo", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="V clean - Control Operativo", page_icon="🛡️", layout="wide")
 
 # --- 2. ESTILOS CSS ---
 st.markdown("""

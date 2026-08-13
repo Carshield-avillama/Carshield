@@ -61,6 +61,10 @@ def load_data_pintura():
         return pd.DataFrame(columns=["ID_Pieza", "Placa_Asociada", "Nombre_Pieza", "Fecha_Ingreso_Cabina", "Fecha_Estimada_Fin", "Estado_Pintura", "Observaciones"])
     return pd.DataFrame(records)
 
+# Función de seguridad para leer los selectbox sin que la app se caiga por errores de tipeo
+def get_idx(valor, opciones):
+    return opciones.index(valor) if valor in opciones else 0
+
 df_db = load_data_detallado()
 df_pintura = load_data_pintura()
 
@@ -80,9 +84,11 @@ else:
 
 choice = st.sidebar.radio("Ir a:", menu)
 
-opciones_estado_detallado = ["Pendiente", "En Proceso", "Completado"]
+# --- OPCIONES DE LISTAS DESPLEGABLES ---
+opciones_estado_detallado = ["Pendiente", "En Proceso", "Completado", "N/A"]
 opciones_estado_pintura = ["Ingreso a Cabina", "Preparación/Lijado", "Fondeado/Imprimación", "Aplicación de Color", "Aplicación de Transparente", "Horneado/Secado", "Pulido Final", "Terminado"]
 opciones_etapa_pintura_general = ["No iniciado", "Alistado", "en cabina de pintura", "entregado"]
+opciones_estado_general = ["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"]
 
 # ==========================================
 # SECCIÓN 0: CONSULTA CLIENTE/AGENCIA
@@ -91,15 +97,24 @@ if choice == "Consultar Estado (Cliente/Agencia)":
     st.header("🚘 Consulta de Estado de Vehículos")
     st.write("Ingrese el nombre de la Agencia (Ej: Purdy) o el número de placa para verificar el avance en tiempo real.")
     
-    busqueda_cliente = st.text_input("🔍 Nombre de Agencia o Placa:").upper().strip()
+    col_busq1, col_busq2 = st.columns(2)
+    with col_busq1:
+        busqueda_cliente = st.text_input("🔍 Nombre de Agencia o Placa:").upper().strip()
+    with col_busq2:
+        estatus_filtro_cliente = st.selectbox("Filtrar por Estatus:", ["Todos"] + opciones_estado_general)
     
     if st.button("Buscar Vehículos"):
         if busqueda_cliente:
+            # Buscar coincidencias por Placa o Agencia
             mask = (df_db['Placa'].astype(str).str.upper().str.strip() == busqueda_cliente) | (df_db['Agencia'].astype(str).str.upper().str.strip().str.contains(busqueda_cliente))
             filtro = df_db[mask]
             
+            # Aplicar filtro extra por Estatus si el cliente seleccionó alguno distinto a "Todos"
+            if estatus_filtro_cliente != "Todos":
+                filtro = filtro[filtro['Estado_General'] == estatus_filtro_cliente]
+            
             if not filtro.empty:
-                st.success(f"✅ Se encontraron {len(filtro)} vehículo(s).")
+                st.success(f"✅ Se encontraron {len(filtro)} vehículo(s) coincidiendo con su búsqueda.")
                 
                 for idx, vehiculo in filtro.iterrows():
                     estado_gen = vehiculo.get('Estado_General', 'En Taller')
@@ -117,7 +132,6 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                     titulo_expander = f"🚘 Placa: {vehiculo.get('Placa', '')} | {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} | Agencia: {agencia_texto} | Estatus: {estado_gen}"
                     
                     with st.expander(titulo_expander):
-                        # CELDA DE ALTA PRIORIDAD PARA LA FECHA
                         st.markdown(f"<div class='fecha-destacada'><h4>🗓️ Fecha Estimada de Entrega: <span style='color:#d97706'>{fecha_entrega_str}</span></h4></div>", unsafe_allow_html=True)
                         
                         st.markdown(f"### Estado General: <span style='color:{color}'>{estado_gen}</span>", unsafe_allow_html=True)
@@ -130,7 +144,9 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                             "Pulido de Vidrios": vehiculo.get("Pulido_Vidrios", "Pendiente"),
                             "Limpieza de Tapicería": vehiculo.get("Limpieza_Tapiceria", "Pendiente"),
                             "Limpieza de Motor": vehiculo.get("Limpieza_Motor", "Pendiente"),
-                            "Polarizado": vehiculo.get("Polarizado", "Pendiente", "No aplica")
+                            "Polarizado": vehiculo.get("Polarizado", "Pendiente"),
+                            "Quitar Racks": vehiculo.get("Quitar_Racks", "Pendiente"),
+                            "Adelantado": vehiculo.get("Adelantado", "Pendiente")
                         }
                         df_detalles = pd.DataFrame(list(detalles.items()), columns=["Proceso", "Estatus"])
                         st.dataframe(df_detalles, use_container_width=True, hide_index=True)
@@ -143,9 +159,9 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                             df_pintura_mostrar.columns = ["Pieza", "Etapa Actual", "Fecha Estimada"]
                             st.dataframe(df_pintura_mostrar, use_container_width=True, hide_index=True)
             else:
-                st.warning("⚠️ No se encontró ningún vehículo activo con esa placa o nombre de agencia.")
+                st.warning("⚠️ No se encontró ningún vehículo activo con esos criterios de búsqueda y estatus.")
         else:
-            st.error("Por favor, ingrese un término de búsqueda válido.")
+            st.error("Por favor, ingrese un término de búsqueda válido (Agencia o Placa).")
 
 # ==========================================
 # SECCIÓN 1: INGRESO
@@ -205,25 +221,21 @@ elif choice == "Actualizar Estatus (Detallado)":
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    pp = st.selectbox("Pulido Pintura", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Pulido_Pintura"]))
-                    pv = st.selectbox("Pulido Vidrios", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Pulido_Vidrios"]))
-                    lt = st.selectbox("Limpieza Tapicería", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Limpieza_Tapiceria"]))
+                    pp = st.selectbox("Pulido Pintura", opciones_estado_detallado, index=get_idx(vehiculo.get("Pulido_Pintura", ""), opciones_estado_detallado))
+                    pv = st.selectbox("Pulido Vidrios", opciones_estado_detallado, index=get_idx(vehiculo.get("Pulido_Vidrios", ""), opciones_estado_detallado))
+                    lt = st.selectbox("Limpieza Tapicería", opciones_estado_detallado, index=get_idx(vehiculo.get("Limpieza_Tapiceria", ""), opciones_estado_detallado))
                 with col2:
-                    lm = st.selectbox("Limpieza Motor", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Limpieza_Motor"]))
-                    pol = st.selectbox("Polarizado", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Polarizado"]))
-                    qr = st.selectbox("Quitar Racks", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Quitar_Racks"]))
+                    lm = st.selectbox("Limpieza Motor", opciones_estado_detallado, index=get_idx(vehiculo.get("Limpieza_Motor", ""), opciones_estado_detallado))
+                    pol = st.selectbox("Polarizado", opciones_estado_detallado, index=get_idx(vehiculo.get("Polarizado", ""), opciones_estado_detallado))
+                    qr = st.selectbox("Quitar Racks", opciones_estado_detallado, index=get_idx(vehiculo.get("Quitar_Racks", ""), opciones_estado_detallado))
                 with col3:
-                    ade = st.selectbox("Adelantado", opciones_estado_detallado, index=opciones_estado_detallado.index(vehiculo["Adelantado"]))
-                    estado_gen = st.selectbox("Estado General", ["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"], index=["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"].index(vehiculo["Estado_General"]))
-                    
-                    estatus_pintura_actual = vehiculo.get("Etapa_Pintura", "No iniciado")
-                    idx_pintura = opciones_etapa_pintura_general.index(estatus_pintura_actual) if estatus_pintura_actual in opciones_etapa_pintura_general else 0
-                    etapa_pintura = st.selectbox("Etapa de Pintura", opciones_etapa_pintura_general, index=idx_pintura)
+                    ade = st.selectbox("Adelantado", opciones_estado_detallado, index=get_idx(vehiculo.get("Adelantado", ""), opciones_estado_detallado))
+                    estado_gen = st.selectbox("Estado General", opciones_estado_general, index=get_idx(vehiculo.get("Estado_General", ""), opciones_estado_general))
+                    etapa_pintura = st.selectbox("Etapa de Pintura", opciones_etapa_pintura_general, index=get_idx(vehiculo.get("Etapa_Pintura", ""), opciones_etapa_pintura_general))
                     
                 st.write("---")
                 col_extra1, col_extra2, col_extra3 = st.columns(3)
                 with col_extra1:
-                    # Lo dejo como texto para evitar errores si está vacío en la base de datos
                     fecha_estimada = st.text_input("Fecha Estimada de Entrega 🗓️", value=str(vehiculo.get("Fecha_Estimada_Entrega", "")))
                 with col_extra2:
                     fecha_pintura = st.text_input("Fecha a Pintura (opcional)", value=str(vehiculo.get("Fecha_Pintura", "")))
@@ -233,7 +245,6 @@ elif choice == "Actualizar Estatus (Detallado)":
                 guardar_cambios = st.form_submit_button("Guardar Cambios")
                 
                 if guardar_cambios:
-                    # Las columnas a actualizar ahora van de la H a la S (12 columnas en total)
                     valores_actualizados = [[fecha_estimada, pp, pv, lt, lm, pol, qr, ade, estado_gen, fecha_pintura, etapa_pintura, nuevas_obs]]
                     hoja_datos.update(range_name=f"H{fila_sheet}:S{fila_sheet}", values=valores_actualizados)
                     st.success("✅ Estatus actualizado correctamente.")
@@ -290,7 +301,7 @@ elif choice == "Departamento de Pintura":
                     
                     with st.form(f"form_actualizar_pnt_{row['ID_Pieza']}"):
                         estado_actual = row["Estado_Pintura"]
-                        index_estado = opciones_estado_pintura.index(estado_actual) if estado_actual in opciones_estado_pintura else 0
+                        index_estado = get_idx(estado_actual, opciones_estado_pintura)
                         
                         nuevo_estado_pnt = st.selectbox("Etapa actual en cabina", opciones_estado_pintura, index=index_estado)
                         nueva_fecha_pnt = st.text_input("Modificar Fecha de Finalización (Opcional)", value=str(row["Fecha_Estimada_Fin"]))

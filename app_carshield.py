@@ -15,6 +15,7 @@ st.markdown("""
     .stButton>button { background-color: #FFD700; color: #000000; font-weight: bold; border: none; width: 100%; }
     .stButton>button:hover { background-color: #e6c200; color: #000000; }
     .pintura-header { background-color: #333333; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px;}
+    .admin-header { background-color: #7f1d1d; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -23,7 +24,7 @@ st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", u
 st.write("---")
 
 # --- 3. CONEXIÓN A GOOGLE SHEETS ---
-@st.cache_resource
+@st.cache_resource(ttl=10)
 def get_gspread_client():
     scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     creds_dict = dict(st.secrets["gcp_service_account"])
@@ -62,17 +63,80 @@ def load_data_pintura():
 df_db = load_data_detallado()
 df_pintura = load_data_pintura()
 
-# --- 5. INTERFAZ DE NAVEGACIÓN ---
-menu = ["Ingresar Vehículo Nuevo", "Actualizar Estatus (Detallado)", "Departamento de Pintura", "Panel de Revisión (Admin)"]
-choice = st.sidebar.radio("Navegación Principal", menu)
+# --- SISTEMA DE SEGURIDAD Y NAVEGACIÓN ---
+st.sidebar.markdown("### Menú de Acceso")
+PASSWORD_ADMIN = "Carshield2026"
+
+clave_ingresada = st.sidebar.text_input("🔒 Acceso Operativo", type="password", help="Solo para personal del taller")
+
+if clave_ingresada == PASSWORD_ADMIN:
+    st.sidebar.success("Acceso interno concedido")
+    menu = ["Consultar Estado (Cliente)", "Ingresar Vehículo Nuevo", "Actualizar Estatus (Detallado)", "Departamento de Pintura", "Panel de Revisión (Admin)"]
+else:
+    menu = ["Consultar Estado (Cliente)"]
+    if clave_ingresada != "":
+        st.sidebar.error("Clave incorrecta")
+
+choice = st.sidebar.radio("Ir a:", menu)
 
 opciones_estado_detallado = ["Pendiente", "En Proceso", "Completado"]
 opciones_estado_pintura = ["Ingreso a Cabina", "Preparación/Lijado", "Fondeado/Imprimación", "Aplicación de Color", "Aplicación de Transparente", "Horneado/Secado", "Pulido Final", "Terminado"]
 
 # ==========================================
+# SECCIÓN 0: CONSULTA CLIENTE (PÚBLICO)
+# ==========================================
+if choice == "Consultar Estado (Cliente)":
+    st.header("🚘 Consulta de Estado de su Vehículo")
+    st.write("Ingrese su número de placa para verificar el avance del servicio en tiempo real.")
+    
+    placa_cliente = st.text_input("Número de placa (Ej: ABC123):").upper().strip()
+    
+    if st.button("Buscar Vehículo"):
+        if placa_cliente:
+            filtro = df_db[df_db['Placa'].astype(str).str.upper().str.strip() == placa_cliente]
+            
+            if not filtro.empty:
+                vehiculo = filtro.iloc[-1] 
+                
+                st.success(f"✅ Vehículo encontrado: {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} - {vehiculo.get('Color', '')}")
+                
+                estado_gen = vehiculo.get('Estado_General', 'En Taller')
+                if estado_gen == "Entregado":
+                    color = "green"
+                elif estado_gen == "Listo para Entrega":
+                    color = "blue"
+                else:
+                    color = "orange"
+                    
+                st.markdown(f"### Estado General: <span style='color:{color}'>{estado_gen}</span>", unsafe_allow_html=True)
+                
+                st.write("---")
+                st.write("#### ✨ Procesos de Detallado:")
+                detalles = {
+                    "Pulido de Pintura": vehiculo.get("Pulido_Pintura", "Pendiente"),
+                    "Pulido de Vidrios": vehiculo.get("Pulido_Vidrios", "Pendiente"),
+                    "Limpieza de Tapicería": vehiculo.get("Limpieza_Tapiceria", "Pendiente"),
+                    "Limpieza de Motor": vehiculo.get("Limpieza_Motor", "Pendiente"),
+                    "Polarizado": vehiculo.get("Polarizado", "Pendiente")
+                }
+                df_detalles = pd.DataFrame(list(detalles.items()), columns=["Proceso", "Estatus"])
+                st.dataframe(df_detalles, use_container_width=True, hide_index=True)
+                
+                filtro_pintura = df_pintura[df_pintura['Placa_Asociada'].astype(str).str.upper().str.strip() == placa_cliente]
+                if not filtro_pintura.empty:
+                    st.write("#### 🎨 Estado en Cabina de Pintura:")
+                    df_pintura_mostrar = filtro_pintura[["Nombre_Pieza", "Estado_Pintura", "Fecha_Estimada_Fin"]].copy()
+                    df_pintura_mostrar.columns = ["Pieza", "Etapa Actual", "Fecha Estimada"]
+                    st.dataframe(df_pintura_mostrar, use_container_width=True, hide_index=True)
+            else:
+                st.warning("⚠️ No se encontró ningún vehículo activo en el taller con esa placa.")
+        else:
+            st.error("Por favor, ingrese un número de placa válido.")
+
+# ==========================================
 # SECCIÓN 1: INGRESO
 # ==========================================
-if choice == "Ingresar Vehículo Nuevo":
+elif choice == "Ingresar Vehículo Nuevo":
     st.header("1. Registrar Nuevo Ingreso al Taller")
     
     col1, col2 = st.columns(2)
@@ -155,7 +219,6 @@ elif choice == "Departamento de Pintura":
     
     tab1, tab2, tab3 = st.tabs(["Registrar Nueva Pieza", "Actualizar Proceso", "Inventario en Cabina"])
 
-    # PESTAÑA 1: INGRESO DE PIEZAS
     with tab1:
         st.write("#### Ingresar pieza al área de pintura")
         with st.form("form_ingreso_pintura"):
@@ -184,7 +247,6 @@ elif choice == "Departamento de Pintura":
                 else:
                     st.error("⚠️ La placa y el nombre de la pieza son obligatorios.")
 
-    # PESTAÑA 2: ACTUALIZACIÓN DE PINTURA
     with tab2:
         st.write("#### Actualizar etapas de pintura")
         placa_buscar_pintura = st.text_input("Buscar placa asociada a la pieza:").upper()
@@ -213,7 +275,6 @@ elif choice == "Departamento de Pintura":
             else:
                 st.warning("No hay piezas registradas en pintura bajo esa placa.")
 
-    # PESTAÑA 3: INVENTARIO EN CABINA
     with tab3:
         st.write("#### Piezas actualmente en proceso de pintura")
         if not df_pintura.empty:
@@ -246,3 +307,26 @@ elif choice == "Panel de Revisión (Admin)":
         st.write("### Resumen de Piezas en Pintura")
         if not df_pintura.empty:
             st.dataframe(df_pintura, use_container_width=True)
+
+        st.write("---")
+        st.markdown("<div class='admin-header'><h4>⚠️ Eliminar Registro de Detallado</h4></div>", unsafe_allow_html=True)
+        st.warning("Esta acción borrará el vehículo permanentemente de la base de datos principal.")
+        
+        id_borrar = st.text_input("Ingrese el ID exacto a eliminar (Ej: 0001):").strip()
+        
+        if st.button("Eliminar Permanentemente"):
+            if id_borrar:
+                filtro_borrar = df_db[df_db['ID'].astype(str).str.zfill(4) == id_borrar.zfill(4)]
+                if not filtro_borrar.empty:
+                    idx_borrar = filtro_borrar.index[0]
+                    fila_sheet_borrar = int(idx_borrar) + 2
+                    
+                    try:
+                        hoja_datos.delete_rows(fila_sheet_borrar)
+                        st.success(f"✅ El registro {id_borrar} ha sido eliminado. Recarga la página para actualizar.")
+                    except Exception as e:
+                        st.error(f"Error al intentar borrar: {e}")
+                else:
+                    st.error("No se encontró ese ID en la base de datos.")
+            else:
+                st.error("Ingrese un ID válido.")

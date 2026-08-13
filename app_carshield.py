@@ -20,7 +20,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("V clean Lavacar corporativo")
+st.title("V clean Aliado clave para el éxito")
 st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)
 st.write("---")
 
@@ -61,7 +61,6 @@ def load_data_pintura():
         return pd.DataFrame(columns=["ID_Pieza", "Placa_Asociada", "Nombre_Pieza", "Fecha_Ingreso_Cabina", "Fecha_Estimada_Fin", "Estado_Pintura", "Observaciones"])
     return pd.DataFrame(records)
 
-# Función de seguridad para leer los selectbox sin que la app se caiga por errores de tipeo
 def get_idx(valor, opciones):
     return opciones.index(valor) if valor in opciones else 0
 
@@ -105,11 +104,9 @@ if choice == "Consultar Estado (Cliente/Agencia)":
     
     if st.button("Buscar Vehículos"):
         if busqueda_cliente:
-            # Buscar coincidencias por Placa o Agencia
             mask = (df_db['Placa'].astype(str).str.upper().str.strip() == busqueda_cliente) | (df_db['Agencia'].astype(str).str.upper().str.strip().str.contains(busqueda_cliente))
             filtro = df_db[mask]
             
-            # Aplicar filtro extra por Estatus si el cliente seleccionó alguno distinto a "Todos"
             if estatus_filtro_cliente != "Todos":
                 filtro = filtro[filtro['Estado_General'] == estatus_filtro_cliente]
             
@@ -129,7 +126,8 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                     else:
                         color = "orange"
                     
-                    titulo_expander = f"🚘 Placa: {vehiculo.get('Placa', '')} | {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} | Agencia: {agencia_texto} | Estatus: {estado_gen}"
+                    # --- AQUÍ SE AÑADIÓ LA FECHA AL TÍTULO DEL EXPANDER ---
+                    titulo_expander = f"🚘 Placa: {vehiculo.get('Placa', '')} | {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} | Agencia: {agencia_texto} | Estatus: {estado_gen} | 🗓️ Entrega: {fecha_entrega_str}"
                     
                     with st.expander(titulo_expander):
                         st.markdown(f"<div class='fecha-destacada'><h4>🗓️ Fecha Estimada de Entrega: <span style='color:#d97706'>{fecha_entrega_str}</span></h4></div>", unsafe_allow_html=True)

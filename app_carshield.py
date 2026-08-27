@@ -21,7 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("V clean Aliado clave para el éxito")
-st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Panel de Control Operativo y Agenda</h3>", unsafe_allow_html=True)
 st.write("---")
 
 # --- 3. CONEXIÓN A GOOGLE SHEETS ---
@@ -35,11 +35,19 @@ def get_gspread_client():
 try:
     client = get_gspread_client()
     hoja_datos = client.open("Carshield_BaseDatos_App").sheet1 
+    
     try:
         hoja_pintura = client.open("Carshield_BaseDatos_App").worksheet("Piezas_Pintura")
     except gspread.exceptions.WorksheetNotFound:
-        st.error("⚠️ Para que el módulo de pintura funcione, debes crear una pestaña llamada 'Piezas_Pintura' en tu Google Sheet.")
+        st.error("⚠️ Falta crear la pestaña 'Piezas_Pintura' en Google Sheets.")
         st.stop()
+        
+    try:
+        hoja_agenda = client.open("Carshield_BaseDatos_App").worksheet("Agenda_Servicios")
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("⚠️ Falta crear la pestaña 'Agenda_Servicios' en Google Sheets.")
+        st.stop()
+        
 except Exception as e:
     st.error(f"Error de conexión. Verifica los permisos: {e}")
     st.stop()
@@ -49,9 +57,9 @@ def load_data_detallado():
     records = hoja_datos.get_all_records()
     if not records:
         columnas = ["ID", "Fecha_Ingreso", "Placa", "Marca", "Modelo", "Color", "Agencia", "Fecha_Estimada_Entrega",
-                   "Pulido_Pintura", "Pulido_Vidrios", "Limpieza_Tapiceria",
-                   "Limpieza_Motor", "Polarizado", "Quitar_Racks", "Adelantado",
-                   "Estado_General", "Fecha_Pintura", "Etapa_Pintura", "Observaciones"]
+                    "Pulido_Pintura", "Pulido_Vidrios", "Limpieza_Tapiceria",
+                    "Limpieza_Motor", "Polarizado", "Quitar_Racks", "Adelantado",
+                    "Estado_General", "Fecha_Pintura", "Etapa_Pintura", "Observaciones"]
         return pd.DataFrame(columns=columnas)
     return pd.DataFrame(records)
 
@@ -61,25 +69,44 @@ def load_data_pintura():
         return pd.DataFrame(columns=["ID_Pieza", "Placa_Asociada", "Nombre_Pieza", "Fecha_Ingreso_Cabina", "Fecha_Estimada_Fin", "Estado_Pintura", "Observaciones"])
     return pd.DataFrame(records)
 
+def load_data_agenda():
+    records = hoja_agenda.get_all_records()
+    if not records:
+        return pd.DataFrame(columns=["ID_Reserva", "Fecha_Registro", "Vendedor", "Cliente", "Contacto_Cliente", "Tipo_Auto", "Servicios_Contratados", "Fecha_Hora_Servicio", "Precio", "Estado"])
+    return pd.DataFrame(records)
+
 def get_idx(valor, opciones):
     return opciones.index(valor) if valor in opciones else 0
 
 df_db = load_data_detallado()
 df_pintura = load_data_pintura()
+df_agenda = load_data_agenda()
 
-# --- SISTEMA DE SEGURIDAD Y NAVEGACIÓN ---
-st.sidebar.markdown("### Menú de Acceso")
-PASSWORD_ADMIN = "Vclean1993"
+# --- 5. SISTEMA DE SEGURIDAD Y NAVEGACIÓN UNIFICADO ---
+st.sidebar.markdown("### 🔒 Acceso al Sistema")
+clave_ingresada = st.sidebar.text_input("Ingrese su clave:", type="password")
 
-clave_ingresada = st.sidebar.text_input("🔒 Acceso Operativo", type="password", help="Solo para personal del taller")
+CLAVE_VENDEDOR = "Ventas2026"
+CLAVE_ASESOR = "Taller2026"
+CLAVE_ADMIN = "Fujitsu2022"
 
-if clave_ingresada == PASSWORD_ADMIN:
-    st.sidebar.success("Acceso interno concedido")
-    menu = ["Consultar Estado (Cliente/Agencia)", "Ingresar Vehículo Nuevo", "Actualizar Estatus (Detallado)", "Departamento de Pintura", "Panel de Revisión (Admin)"]
-else:
-    menu = ["Consultar Estado (Cliente/Agencia)"]
-    if clave_ingresada != "":
-        st.sidebar.error("Clave incorrecta")
+perfil_actual = None
+menu = ["Consultar Estado (Cliente/Agencia)"] # Menú público por defecto
+
+if clave_ingresada == CLAVE_ADMIN:
+    perfil_actual = "Administrador"
+    st.sidebar.success("Perfil: Administrador")
+    menu = ["Consultar Estado (Cliente/Agencia)", "Agendar Servicio (Ventas)", "Agenda Operativa (Taller)", "Ingresar Vehículo Nuevo", "Actualizar Estatus (Detallado)", "Departamento de Pintura", "Panel de Revisión (Admin)"]
+elif clave_ingresada == CLAVE_ASESOR:
+    perfil_actual = "Asesor"
+    st.sidebar.success("Perfil: Asesor Operativo")
+    menu = ["Consultar Estado (Cliente/Agencia)", "Agenda Operativa (Taller)", "Ingresar Vehículo Nuevo", "Actualizar Estatus (Detallado)", "Departamento de Pintura"]
+elif clave_ingresada == CLAVE_VENDEDOR:
+    perfil_actual = "Vendedor"
+    st.sidebar.success("Perfil: Vendedor Comercial")
+    menu = ["Consultar Estado (Cliente/Agencia)", "Agendar Servicio (Ventas)"]
+elif clave_ingresada != "":
+    st.sidebar.error("Clave incorrecta")
 
 choice = st.sidebar.radio("Ir a:", menu)
 
@@ -88,6 +115,7 @@ opciones_estado_detallado = ["Pendiente", "En Proceso", "Completado", "N/A"]
 opciones_estado_pintura = ["Ingreso a Cabina", "Preparación/Lijado", "Fondeado/Imprimación", "Aplicación de Color", "Aplicación de Transparente", "Horneado/Secado", "Pulido Final", "Terminado"]
 opciones_etapa_pintura_general = ["No iniciado", "Alistado", "en cabina de pintura", "entregado"]
 opciones_estado_general = ["En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"]
+
 
 # ==========================================
 # SECCIÓN 0: CONSULTA CLIENTE/AGENCIA
@@ -126,7 +154,6 @@ if choice == "Consultar Estado (Cliente/Agencia)":
                     else:
                         color = "orange"
                     
-                    # --- AQUÍ SE AÑADIÓ LA FECHA AL TÍTULO DEL EXPANDER ---
                     titulo_expander = f"🚘 Placa: {vehiculo.get('Placa', '')} | {vehiculo.get('Marca', '')} {vehiculo.get('Modelo', '')} | Agencia: {agencia_texto} | Estatus: {estado_gen} | 🗓️ Entrega: {fecha_entrega_str}"
                     
                     with st.expander(titulo_expander):
@@ -162,6 +189,55 @@ if choice == "Consultar Estado (Cliente/Agencia)":
             st.error("Por favor, ingrese un término de búsqueda válido (Agencia o Placa).")
 
 # ==========================================
+# MÓDULO NUEVO: AGENDAR SERVICIO (VENTAS)
+# ==========================================
+elif choice == "Agendar Servicio (Ventas)":
+    st.header("📝 Agendar Nuevo Servicio")
+    with st.form("form_nueva_reserva"):
+        col1, col2 = st.columns(2)
+        with col1:
+            vendedor = st.text_input("Nombre del Vendedor *")
+            cliente = st.text_input("Nombre del Cliente *")
+            contacto_cliente = st.text_input("Contacto del Cliente (Teléfono o Email) *")
+        with col2:
+            tipo_auto = st.text_input("Tipo de Auto (Ej: SUV, Sedán, Pick-up) *")
+            fecha_hora = st.text_input("Fecha y Hora del Servicio (Ej: 25-Oct 09:00 AM) *")
+            precio = st.number_input("Precio Acordado (₡ o $) *", min_value=0.0, format="%.2f")
+            
+        servicios = st.text_area("Descripción de los servicios contratados *")
+        submit = st.form_submit_button("Agendar Auto")
+        
+        if submit:
+            if vendedor and cliente and contacto_cliente and tipo_auto and fecha_hora and servicios:
+                nuevo_id = "RES-" + str(len(df_agenda) + 1).zfill(4)
+                fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M")
+                nueva_fila = [
+                    nuevo_id, fecha_registro, vendedor, cliente, contacto_cliente, tipo_auto,
+                    servicios, fecha_hora, str(precio), "Agendado"
+                ]
+                hoja_agenda.append_row(nueva_fila)
+                st.success(f"✅ Reserva {nuevo_id} agendada correctamente.")
+            else:
+                st.error("⚠️ Llene todos los campos obligatorios (*)")
+
+# ==========================================
+# MÓDULO NUEVO: AGENDA OPERATIVA (TALLER)
+# ==========================================
+elif choice == "Agenda Operativa (Taller)":
+    st.header("🗓️ Calendario de Trabajo Operativo")
+    st.write("Revisa los autos programados para organizar la jornada.")
+    
+    if not df_agenda.empty:
+        df_asesor = df_agenda[["ID_Reserva", "Fecha_Hora_Servicio", "Tipo_Auto", "Servicios_Contratados", "Estado", "Cliente", "Contacto_Cliente", "Vendedor"]]
+        busqueda_agenda = st.text_input("🔍 Buscar por fecha, auto o ID en la agenda:")
+        if busqueda_agenda:
+            mask = df_asesor.apply(lambda row: row.astype(str).str.upper().str.contains(busqueda_agenda.upper()), axis=1)
+            df_asesor = df_asesor[mask]
+        st.dataframe(df_asesor, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay servicios agendados por el momento.")
+
+# ==========================================
 # SECCIÓN 1: INGRESO
 # ==========================================
 elif choice == "Ingresar Vehículo Nuevo":
@@ -190,7 +266,6 @@ elif choice == "Ingresar Vehículo Nuevo":
                 "Pendiente", "Pendiente", "Pendiente", "En Taller",
                 "", "No iniciado", observaciones
             ]
-            
             hoja_datos.append_row(nueva_fila)
             st.success(f"✅ Vehículo {placa} registrado correctamente.")
         else:
@@ -328,43 +403,94 @@ elif choice == "Departamento de Pintura":
 # SECCIÓN 4: REVISIÓN (ADMIN)
 # ==========================================
 elif choice == "Panel de Revisión (Admin)":
-    st.header("4. Visión General de Operaciones")
+    st.header("⚙️ Panel de Revisión General (Admin)")
     
-    if df_db.empty:
-        st.info("La base de datos está vacía. Registra tu primer vehículo.")
-    else:
-        st.write("### Flujo General de Detallado")
-        estatus_filtro = st.radio("Filtrar por Estado General:", ["Todos", "En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"], horizontal=True)
-        
-        df_mostrar = df_db.copy()
-        if estatus_filtro != "Todos":
-            df_mostrar = df_mostrar[df_mostrar["Estado_General"] == estatus_filtro]
+    # Creamos sub-pestañas para no saturar la pantalla del admin
+    tab_op, tab_agenda = st.tabs(["Control Operativo (V Clean)", "Control Agenda Comercial"])
+    
+    with tab_op:
+        if df_db.empty:
+            st.info("La base de datos operativa está vacía.")
+        else:
+            st.write("### Flujo General de Detallado")
+            estatus_filtro = st.radio("Filtrar por Estado General:", ["Todos", "En Taller", "En Cabina de Pintura", "Listo para Entrega", "Entregado"], horizontal=True)
             
-        st.dataframe(df_mostrar, use_container_width=True)
-        
-        st.write("### Resumen de Piezas en Pintura")
-        if not df_pintura.empty:
-            st.dataframe(df_pintura, use_container_width=True)
+            df_mostrar = df_db.copy()
+            if estatus_filtro != "Todos":
+                df_mostrar = df_mostrar[df_mostrar["Estado_General"] == estatus_filtro]
+                
+            st.dataframe(df_mostrar, use_container_width=True)
+            
+            st.write("### Resumen de Piezas en Pintura")
+            if not df_pintura.empty:
+                st.dataframe(df_pintura, use_container_width=True)
 
-        st.write("---")
-        st.markdown("<div class='admin-header'><h4>⚠️ Eliminar Registro de Detallado</h4></div>", unsafe_allow_html=True)
-        st.warning("Esta acción borrará el vehículo permanentemente de la base de datos principal.")
-        
-        id_borrar = st.text_input("Ingrese el ID exacto a eliminar (Ej: 0001):").strip()
-        
-        if st.button("Eliminar Permanentemente"):
-            if id_borrar:
-                filtro_borrar = df_db[df_db['ID'].astype(str).str.zfill(4) == id_borrar.zfill(4)]
-                if not filtro_borrar.empty:
-                    idx_borrar = filtro_borrar.index[0]
-                    fila_sheet_borrar = int(idx_borrar) + 2
-                    
-                    try:
-                        hoja_datos.delete_rows(fila_sheet_borrar)
-                        st.success(f"✅ El registro {id_borrar} ha sido eliminado. Recarga la página para actualizar.")
-                    except Exception as e:
-                        st.error(f"Error al intentar borrar: {e}")
+            st.write("---")
+            st.markdown("<div class='admin-header'><h4>⚠️ Eliminar Registro de Detallado</h4></div>", unsafe_allow_html=True)
+            st.warning("Esta acción borrará el vehículo permanentemente de la base de datos principal.")
+            
+            id_borrar = st.text_input("Ingrese el ID exacto a eliminar (Ej: 0001):").strip()
+            
+            if st.button("Eliminar Permanentemente Operativo"):
+                if id_borrar:
+                    filtro_borrar = df_db[df_db['ID'].astype(str).str.zfill(4) == id_borrar.zfill(4)]
+                    if not filtro_borrar.empty:
+                        idx_borrar = filtro_borrar.index[0]
+                        fila_sheet_borrar = int(idx_borrar) + 2
+                        
+                        try:
+                            hoja_datos.delete_rows(fila_sheet_borrar)
+                            st.success(f"✅ El registro {id_borrar} ha sido eliminado. Recarga la página para actualizar.")
+                        except Exception as e:
+                            st.error(f"Error al intentar borrar: {e}")
+                    else:
+                        st.error("No se encontró ese ID en la base de datos.")
                 else:
-                    st.error("No se encontró ese ID en la base de datos.")
-            else:
-                st.error("Ingrese un ID válido.")
+                    st.error("Ingrese un ID válido.")
+
+    with tab_agenda:
+        if df_agenda.empty:
+            st.info("La agenda comercial está vacía.")
+        else:
+            st.write("### Base de Datos Agenda (Con Precios y Contactos)")
+            st.dataframe(df_agenda, use_container_width=True)
+            
+            st.write("---")
+            st.subheader("✏️ Editar o Actualizar Reserva de Agenda")
+            id_editar = st.text_input("Ingrese el ID de la reserva a editar (Ej: RES-0001):").upper()
+            
+            if id_editar:
+                filtro = df_agenda[df_agenda["ID_Reserva"] == id_editar]
+                if not filtro.empty:
+                    idx = filtro.index[0]
+                    fila_sheet = int(idx) + 2
+                    reserva = df_agenda.loc[idx]
+                    
+                    with st.form("form_edicion_admin"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            nuevo_vendedor = st.text_input("Vendedor", value=str(reserva["Vendedor"]))
+                            nuevo_cliente = st.text_input("Cliente", value=str(reserva["Cliente"]))
+                            nuevo_contacto = st.text_input("Contacto del Cliente", value=str(reserva.get("Contacto_Cliente", "")))
+                            nuevo_tipo = st.text_input("Tipo de Auto", value=str(reserva["Tipo_Auto"]))
+                        with col2:
+                            nueva_fecha = st.text_input("Fecha y Hora", value=str(reserva["Fecha_Hora_Servicio"]))
+                            
+                            try:
+                                precio_actual = float(reserva["Precio"])
+                            except ValueError:
+                                precio_actual = 0.0
+                            nuevo_precio = st.number_input("Precio", value=precio_actual, format="%.2f")
+                            
+                            nuevo_estado = st.selectbox("Estado", ["Agendado", "En Proceso", "Terminado", "Cancelado"], 
+                                                        index=["Agendado", "En Proceso", "Terminado", "Cancelado"].index(reserva["Estado"]) if reserva["Estado"] in ["Agendado", "En Proceso", "Terminado", "Cancelado"] else 0)
+                        
+                        nuevos_servicios = st.text_area("Servicios Contratados", value=str(reserva["Servicios_Contratados"]))
+                        
+                        if st.form_submit_button("Guardar Cambios de Agenda"):
+                            # Se actualizan las columnas de la C a la J en la hoja de agenda
+                            valores_actualizados = [[nuevo_vendedor, nuevo_cliente, nuevo_contacto, nuevo_tipo, nuevos_servicios, nueva_fecha, str(nuevo_precio), nuevo_estado]]
+                            hoja_agenda.update(range_name=f"C{fila_sheet}:J{fila_sheet}", values=valores_actualizados)
+                            st.success("✅ Reserva de agenda actualizada correctamente.")
+                else:
+                    st.warning("No se encontró ese ID de reserva.")

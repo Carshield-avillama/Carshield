@@ -1,0 +1,188 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
+
+# --- 1. CONFIGURACIÓN ---
+st.set_page_config(page_title="Carshield - Agenda Operativa", page_icon="📅", layout="wide")
+
+st.markdown("""
+    <style>
+    .main { background-color: #f4f4f4; }
+    h1 { color: #FFD700; text-align: center; background-color: #000000; padding: 10px; border-radius: 5px; }
+    .stButton>button { background-color: #FFD700; color: #000000; font-weight: bold; border: none; width: 100%; }
+    .stButton>button:hover { background-color: #e6c200; color: #000000; }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("CARSHIELD COATINGS")
+st.markdown("<h3 style='text-align: center;'>Agenda Operativa y Comercial</h3>", unsafe_allow_html=True)
+st.write("---")
+
+# --- 2. CONEXIÓN A GOOGLE SHEETS ---
+@st.cache_resource(ttl=10)
+def get_gspread_client():
+    scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    return gspread.authorize(creds)
+
+try:
+    client = get_gspread_client()
+    hoja_agenda = client.open("Carshield_BaseDatos_App").worksheet("Agenda_Servicios")
+except Exception as e:
+    st.error(f"Error de conexión. Asegúrate de crear la pestaña 'Agenda_Servicios': {e}")
+    st.stop()
+
+def load_data():
+    records = hoja_agenda.get_all_records()
+    if not records:
+        return pd.DataFrame(columns=["ID_Reserva", "Fecha_Registro", "Vendedor", "Cliente", "Contacto_Cliente", "Tipo_Auto", "Servicios_Contratados", "Fecha_Hora_Servicio", "Precio", "Estado"])
+    return pd.DataFrame(records)
+
+df = load_data()
+
+# --- 3. SISTEMA DE PERFILES Y SEGURIDAD ---
+st.sidebar.markdown("### 🔒 Acceso al Sistema")
+clave_ingresada = st.sidebar.text_input("Ingrese su clave:", type="password")
+
+# Definición de claves (Puedes cambiarlas aquí)
+CLAVE_VENDEDOR = "Ventas2026"
+CLAVE_ASESOR = "Carshield2026"
+CLAVE_ADMIN = "Fujitsu2022"
+
+perfil_actual = None
+
+if clave_ingresada == CLAVE_VENDEDOR:
+    perfil_actual = "Vendedor"
+    st.sidebar.success("Perfil: Vendedor Comercial")
+elif clave_ingresada == CLAVE_ASESOR:
+    perfil_actual = "Asesor"
+    st.sidebar.success("Perfil: Asesor Operativo")
+elif clave_ingresada == CLAVE_ADMIN:
+    perfil_actual = "Administrador"
+    st.sidebar.success("Perfil: Administrador")
+elif clave_ingresada != "":
+    st.sidebar.error("Clave incorrecta")
+
+# Si no hay perfil, mostrar mensaje de bienvenida
+if not perfil_actual:
+    st.info("👋 Bienvenido. Por favor, ingrese su clave en el menú lateral para acceder a su perfil.")
+    st.stop()
+
+# --- 4. VISTAS POR PERFIL ---
+
+# ==========================================
+# PERFIL 1: VENDEDOR (AGENDAR SERVICIOS)
+# ==========================================
+if perfil_actual in ["Vendedor", "Administrador"]:
+    if perfil_actual == "Vendedor":
+        st.header("📝 Agendar Nuevo Servicio")
+    else:
+        with st.expander("📝 Agendar Nuevo Servicio (Vista Admin)"):
+            mostrar_formulario = True
+            
+    if perfil_actual == "Vendedor" or (perfil_actual == "Administrador" and 'mostrar_formulario' in locals()):
+        with st.form("form_nueva_reserva"):
+            col1, col2 = st.columns(2)
+            with col1:
+                vendedor = st.text_input("Nombre del Vendedor *")
+                cliente = st.text_input("Nombre del Cliente *")
+                contacto_cliente = st.text_input("Contacto del Cliente (Teléfono o Email) *")
+            with col2:
+                tipo_auto = st.text_input("Tipo de Auto (Ej: SUV, Sedán, Pick-up) *")
+                fecha_hora = st.text_input("Fecha y Hora del Servicio (Ej: 25-Oct 09:00 AM) *")
+                precio = st.number_input("Precio Acordado (₡ o $) *", min_value=0.0, format="%.2f")
+                
+            servicios = st.text_area("Descripción de los servicios contratados *")
+            
+            submit = st.form_submit_button("Agendar Auto")
+            
+            if submit:
+                if vendedor and cliente and contacto_cliente and tipo_auto and fecha_hora and servicios:
+                    nuevo_id = "RES-" + str(len(df) + 1).zfill(4)
+                    fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    
+                    nueva_fila = [
+                        nuevo_id, fecha_registro, vendedor, cliente, contacto_cliente, tipo_auto,
+                        servicios, fecha_hora, str(precio), "Agendado"
+                    ]
+                    hoja_agenda.append_row(nueva_fila)
+                    st.success(f"✅ Reserva {nuevo_id} agendada correctamente.")
+                else:
+                    st.error("⚠️ Llene todos los campos obligatorios (*)")
+
+# ==========================================
+# PERFIL 2: ASESOR OPERATIVO (CALENDARIO DE TRABAJO)
+# ==========================================
+if perfil_actual == "Asesor":
+    st.header("🗓️ Calendario de Trabajo Operativo")
+    st.write("Revisa los autos programados para organizar la jornada. (La información financiera está oculta).")
+    
+    if not df.empty:
+        # Filtramos para quitar la columna de precio, pero dejamos el contacto por si ocupan llamar al cliente
+        df_asesor = df[["ID_Reserva", "Fecha_Hora_Servicio", "Tipo_Auto", "Servicios_Contratados", "Estado", "Cliente", "Contacto_Cliente", "Vendedor"]]
+        
+        # Filtro de búsqueda rápida
+        busqueda = st.text_input("🔍 Buscar por fecha, auto o ID:")
+        if busqueda:
+            mask = df_asesor.apply(lambda row: row.astype(str).str.upper().str.contains(busqueda.upper()), axis=1)
+            df_asesor = df_asesor[mask]
+            
+        st.dataframe(df_asesor, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay servicios agendados por el momento.")
+
+# ==========================================
+# PERFIL 3: ADMINISTRADOR (CONTROL TOTAL Y EDICIÓN)
+# ==========================================
+if perfil_actual == "Administrador":
+    st.write("---")
+    st.header("⚙️ Panel de Control General")
+    
+    if not df.empty:
+        st.write("### Base de Datos Completa (Con Precios)")
+        st.dataframe(df, use_container_width=True)
+        
+        st.write("---")
+        st.subheader("✏️ Editar o Actualizar Reserva")
+        id_editar = st.text_input("Ingrese el ID de la reserva a editar (Ej: RES-0001):").upper()
+        
+        if id_editar:
+            filtro = df[df["ID_Reserva"] == id_editar]
+            if not filtro.empty:
+                idx = filtro.index[0]
+                fila_sheet = int(idx) + 2
+                reserva = df.loc[idx]
+                
+                with st.form("form_edicion_admin"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        nuevo_vendedor = st.text_input("Vendedor", value=str(reserva["Vendedor"]))
+                        nuevo_cliente = st.text_input("Cliente", value=str(reserva["Cliente"]))
+                        nuevo_contacto = st.text_input("Contacto del Cliente", value=str(reserva.get("Contacto_Cliente", "")))
+                        nuevo_tipo = st.text_input("Tipo de Auto", value=str(reserva["Tipo_Auto"]))
+                    with col2:
+                        nueva_fecha = st.text_input("Fecha y Hora", value=str(reserva["Fecha_Hora_Servicio"]))
+                        
+                        try:
+                            precio_actual = float(reserva["Precio"])
+                        except ValueError:
+                            precio_actual = 0.0
+                        nuevo_precio = st.number_input("Precio", value=precio_actual, format="%.2f")
+                        
+                        nuevo_estado = st.selectbox("Estado", ["Agendado", "En Proceso", "Terminado", "Cancelado"], 
+                                                    index=["Agendado", "En Proceso", "Terminado", "Cancelado"].index(reserva["Estado"]) if reserva["Estado"] in ["Agendado", "En Proceso", "Terminado", "Cancelado"] else 0)
+                    
+                    nuevos_servicios = st.text_area("Servicios Contratados", value=str(reserva["Servicios_Contratados"]))
+                    
+                    if st.form_submit_button("Guardar Cambios"):
+                        # Se actualizan las columnas de la C a la J
+                        valores_actualizados = [[nuevo_vendedor, nuevo_cliente, nuevo_contacto, nuevo_tipo, nuevos_servicios, nueva_fecha, str(nuevo_precio), nuevo_estado]]
+                        hoja_agenda.update(range_name=f"C{fila_sheet}:J{fila_sheet}", values=valores_actualizados)
+                        st.success("✅ Reserva actualizada correctamente.")
+            else:
+                st.warning("No se encontró ese ID de reserva.")
+    else:
+        st.info("La base de datos está vacía.")
